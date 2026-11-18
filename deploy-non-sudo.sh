@@ -44,21 +44,27 @@ export APP_GID="${CURRENT_GID}"
 COMPOSE_CMD=""
 export PATH="${HOME}/.local/bin:${PATH}"
 
-# Start user-level systemd docker service if present
+# 1. Start user-level systemd docker service if present
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user start docker 2>/dev/null || true
 fi
 
+# 2. Activate rootless docker context if registered
 if command -v docker >/dev/null 2>&1; then
-  # Automatically locate the rootless docker socket
+  if docker context ls 2>/dev/null | grep -q 'rootless'; then
+    echo -e "${CYAN}[i] Activating rootless Docker context...${NC}"
+    docker context use rootless 2>/dev/null || true
+  fi
+
+  # 3. Automatically detect and export non-root DOCKER_HOST socket
   if [ -z "${DOCKER_HOST:-}" ]; then
-    # 1. Check docker context endpoint
-    CTX_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
-    if [ -n "${CTX_HOST}" ] && [ "${CTX_HOST}" != "unix:///var/run/docker.sock" ]; then
-      export DOCKER_HOST="${CTX_HOST}"
+    # Try extracting non-var-run socket from active docker context
+    CTX_SOCKET=$(docker context inspect 2>/dev/null | grep -o 'unix://[^"]*' | grep -v '/var/run/docker.sock' | head -n 1 || true)
+    if [ -n "${CTX_SOCKET}" ]; then
+      export DOCKER_HOST="${CTX_SOCKET}"
     fi
 
-    # 2. Check standard rootless socket paths
+    # Check standard rootless socket paths on filesystem
     if [ -z "${DOCKER_HOST:-}" ]; then
       for candidate_sock in \
         "${XDG_RUNTIME_DIR:-/run/user/${CURRENT_UID}}/docker.sock" \
@@ -73,26 +79,27 @@ if command -v docker >/dev/null 2>&1; then
   fi
 
   if [ -n "${DOCKER_HOST:-}" ]; then
-    echo -e "${CYAN}[i] Using Rootless Docker Host: ${DOCKER_HOST}${NC}"
-  else
-    # 3. If rootless socket not found, attempt user-level rootless setup
-    if ! docker info >/dev/null 2>&1; then
-      echo -e "${YELLOW}[!] Rootless Docker socket not active. Attempting user-level daemon startup...${NC}"
-      if command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1; then
-        dockerd-rootless-setuptool.sh install 2>/dev/null || true
-      fi
-      if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user start docker 2>/dev/null || true
-      fi
-      if [ -S "/run/user/${CURRENT_UID}/docker.sock" ]; then
-        export DOCKER_HOST="unix:///run/user/${CURRENT_UID}/docker.sock"
-        echo -e "${GREEN}[✓] Rootless Docker daemon started at ${DOCKER_HOST}${NC}"
-      fi
-    fi
+    echo -e "${CYAN}[i] Exported DOCKER_HOST=${DOCKER_HOST}${NC}"
   fi
 
-  if docker info >/dev/null 2>&1; then
-    echo -e "${GREEN}[✓] Docker daemon is running and accessible.${NC}"
+  # 4. Verify Docker daemon connectivity
+  if ! docker info >/dev/null 2>&1; then
+    echo -e "${RED}[ERROR] Cannot connect to Docker daemon with current user permissions.${NC}"
+    if id -Gn 2>/dev/null | grep -qw docker; then
+      echo -e "${YELLOW}[!] Your user is in the 'docker' group, but the group is not active in this session.${NC}"
+      echo -e "${GREEN}[*] Solution: Run 'newgrp docker' and re-run ./deploy-non-sudo.sh${NC}"
+    else
+      echo -e "${YELLOW}[!] Rootless Docker daemon is not active. Troubleshooting options:${NC}"
+      echo -e "    Option A (Rootless Docker):"
+      echo -e "       systemctl --user start docker"
+      echo -e "       docker context use rootless"
+      echo -e "    Option B (Standard Docker):"
+      echo -e "       Request server admin to add your user: sudo usermod -aG docker \$USER"
+    fi
+    exit 1
+  fi
+
+  echo -e "${GREEN}[✓] Docker daemon is running and accessible.${NC}"
 
     # 1. Check if Docker Compose V2 plugin is already working
     if docker compose version >/dev/null 2>&1; then
@@ -130,7 +137,6 @@ if command -v docker >/dev/null 2>&1; then
       fi
     fi
   fi
-fi
 
 # Fallback: Check for Podman
 if [ -z "${COMPOSE_CMD}" ] && command -v podman >/dev/null 2>&1; then

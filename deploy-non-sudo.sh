@@ -34,9 +34,9 @@ fi
 
 echo -e "${GREEN}[✓] Executing as non-root user: ${CURRENT_USER} (UID=${CURRENT_UID}, GID=${CURRENT_GID})${NC}"
 
-# Export UID/GID for docker compose variable substitution
-export UID="${CURRENT_UID}"
-export GID="${CURRENT_GID}"
+# Export APP_UID/APP_GID for docker compose variable substitution (avoids Bash readonly $UID conflict)
+export APP_UID="${CURRENT_UID}"
+export APP_GID="${CURRENT_GID}"
 
 # ------------------------------------------------------------------------------
 # 2. Rootless Docker Socket & Daemon Detection

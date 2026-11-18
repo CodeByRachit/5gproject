@@ -6,7 +6,7 @@ services:
     image: mongo:7.0
     container_name: 5g-traffic-mongodb
     restart: unless-stopped
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
     environment:
       MONGO_INITDB_DATABASE: smart_campus_traffic
     volumes:
@@ -31,7 +31,7 @@ services:
       dockerfile: Dockerfile
     container_name: 5g-traffic-backend
     restart: unless-stopped
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
     environment:
       NODE_ENV: production
       PORT: 5000

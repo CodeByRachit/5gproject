@@ -123,8 +123,8 @@ chmod +x deploy-non-sudo.sh backend/docker-entrypoint.sh
 
 ```bash
 # 1. Export unprivileged user UID & GID
-export UID=$(id -u)
-export GID=$(id -g)
+export APP_UID=$(id -u)
+export APP_GID=$(id -g)
 
 # 2. Create host persistence directories with non-root write permissions
 mkdir -p data/mongo data/uploads backend/models backend/data/seed

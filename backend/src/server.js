@@ -3,6 +3,7 @@ import http from 'http';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
 import { connectDB } from './config/db.js';
 import { initSocket } from './sockets/socketManager.js';
@@ -42,15 +43,27 @@ app.use('/uploads', express.static(uploadsDir));
 // Mount REST API
 app.use('/api', apiRoutes);
 
-// Root Health Ping
-app.get('/', (req, res) => {
-  res.json({
-    message: '5G Smart Campus Traffic Monitoring and Mobility Analytics System Backend',
-    version: '2.0.0',
-    status: 'Running',
-    framework: 'Node.js + Express.js + Socket.IO + MongoDB',
+// Serve compiled Frontend assets if present (Native single-port deployment mode)
+const frontendDist = path.resolve('../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
   });
-});
+} else {
+  // Root Health Ping (when served behind Nginx reverse proxy)
+  app.get('/', (req, res) => {
+    res.json({
+      message: '5G Smart Campus Traffic Monitoring and Mobility Analytics System Backend',
+      version: '2.0.0',
+      status: 'Running',
+      framework: 'Node.js + Express.js + Socket.IO + MongoDB',
+    });
+  });
+}
 
 const PORT = process.env.PORT || 5000;
 

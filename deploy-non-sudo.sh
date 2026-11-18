@@ -44,14 +44,51 @@ export APP_GID="${CURRENT_GID}"
 COMPOSE_CMD=""
 export PATH="${HOME}/.local/bin:${PATH}"
 
-if command -v docker >/dev/null 2>&1; then
-  # Check for Rootless Docker socket
-  XDG_DIR="${XDG_RUNTIME_DIR:-/run/user/${CURRENT_UID}}"
-  ROOTLESS_SOCK="${XDG_DIR}/docker.sock"
+# Start user-level systemd docker service if present
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user start docker 2>/dev/null || true
+fi
 
-  if [ -S "${ROOTLESS_SOCK}" ] && [ -z "${DOCKER_HOST:-}" ]; then
-    echo -e "${CYAN}[i] Detected rootless Docker socket at ${ROOTLESS_SOCK}. Exporting DOCKER_HOST...${NC}"
-    export DOCKER_HOST="unix://${ROOTLESS_SOCK}"
+if command -v docker >/dev/null 2>&1; then
+  # Automatically locate the rootless docker socket
+  if [ -z "${DOCKER_HOST:-}" ]; then
+    # 1. Check docker context endpoint
+    CTX_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
+    if [ -n "${CTX_HOST}" ] && [ "${CTX_HOST}" != "unix:///var/run/docker.sock" ]; then
+      export DOCKER_HOST="${CTX_HOST}"
+    fi
+
+    # 2. Check standard rootless socket paths
+    if [ -z "${DOCKER_HOST:-}" ]; then
+      for candidate_sock in \
+        "${XDG_RUNTIME_DIR:-/run/user/${CURRENT_UID}}/docker.sock" \
+        "/run/user/${CURRENT_UID}/docker.sock" \
+        "${HOME}/.docker/run/docker.sock"; do
+        if [ -S "${candidate_sock}" ]; then
+          export DOCKER_HOST="unix://${candidate_sock}"
+          break
+        fi
+      done
+    fi
+  fi
+
+  if [ -n "${DOCKER_HOST:-}" ]; then
+    echo -e "${CYAN}[i] Using Rootless Docker Host: ${DOCKER_HOST}${NC}"
+  else
+    # 3. If rootless socket not found, attempt user-level rootless setup
+    if ! docker info >/dev/null 2>&1; then
+      echo -e "${YELLOW}[!] Rootless Docker socket not active. Attempting user-level daemon startup...${NC}"
+      if command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1; then
+        dockerd-rootless-setuptool.sh install 2>/dev/null || true
+      fi
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user start docker 2>/dev/null || true
+      fi
+      if [ -S "/run/user/${CURRENT_UID}/docker.sock" ]; then
+        export DOCKER_HOST="unix:///run/user/${CURRENT_UID}/docker.sock"
+        echo -e "${GREEN}[✓] Rootless Docker daemon started at ${DOCKER_HOST}${NC}"
+      fi
+    fi
   fi
 
   if docker info >/dev/null 2>&1; then

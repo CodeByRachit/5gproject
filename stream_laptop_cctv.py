@@ -14,6 +14,11 @@ import os
 import time
 import argparse
 import base64
+import threading
+
+# Suppress FFmpeg C library stderr warnings (macroblock and RTP warnings)
+os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "-8"
 
 def check_dependencies():
     missing = []
@@ -33,6 +38,79 @@ def check_dependencies():
 check_dependencies()
 import cv2
 import requests
+
+class FreshFrameGrabber:
+    """
+    Decoupled grabber thread that continually polls the RTSP camera pipeline.
+    Discards buffered frames so that network latency to the 5G server never
+    causes RTSP socket buffer overflows or H.264 macroblock decoding errors.
+    """
+    def __init__(self, source, is_usb=False):
+        self.source = source
+        self.is_usb = is_usb
+        self.cap = None
+        self.latest_frame = None
+        self.running = False
+        self.lock = threading.Lock()
+        self.thread = None
+
+    def start(self):
+        if not self.is_usb:
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;5000000"
+            )
+            self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            if not self.cap or not self.cap.isOpened():
+                if self.cap:
+                    self.cap.release()
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                    "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;5000000"
+                )
+                self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            if not self.cap or not self.cap.isOpened():
+                if self.cap:
+                    self.cap.release()
+                self.cap = cv2.VideoCapture(self.source)
+        else:
+            self.cap = cv2.VideoCapture(self.source)
+
+        if not self.cap or not self.cap.isOpened():
+            return False
+
+        try:
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception:
+            pass
+
+        self.running = True
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
+        return True
+
+    def _loop(self):
+        while self.running and self.cap and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if not ret or frame is None or frame.size == 0:
+                time.sleep(0.005)
+                continue
+            with self.lock:
+                self.latest_frame = frame
+
+    def read(self):
+        with self.lock:
+            if self.latest_frame is None:
+                return False, None
+            return True, self.latest_frame.copy()
+
+    def stop(self):
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.5)
+        if self.cap:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -160,35 +238,25 @@ def main():
         if proceed == "n":
             sys.exit(1)
 
-    # Open Camera with OpenCV
+    # Open Camera with decoupled FreshFrameGrabber
     print(f"\n[*] Connecting to {source_desc}...")
-    if not is_usb:
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;5000000"
-        )
-        cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-        if not cap or not cap.isOpened():
-            if cap:
-                cap.release()
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;5000000"
-            )
-            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-        if not cap or not cap.isOpened():
-            if cap:
-                cap.release()
-            cap = cv2.VideoCapture(source)
-    else:
-        cap = cv2.VideoCapture(source)
-
-    if not cap or not cap.isOpened():
+    grabber = FreshFrameGrabber(source, is_usb=is_usb)
+    if not grabber.start():
         print(f"\n[ERROR] Failed to open camera: {source_desc}")
         print("  • If Sparsh CCTV: Verify Ethernet cable is plugged into this laptop.")
         print(f"  • Verify your laptop has an IP on {args.camera_ip} subnet (e.g. 192.168.128.99).")
         print("  • Verify camera power adapter / POE is connected and powered ON.")
         sys.exit(1)
 
-    print("[✓] Camera stream successfully opened and active!")
+    # Wait for first valid frame
+    print("[*] Waiting for camera frame synchronization...")
+    for _ in range(40):
+        ret, test_frame = grabber.read()
+        if ret and test_frame is not None and test_frame.size > 0:
+            break
+        time.sleep(0.1)
+
+    print("[✓] Camera stream successfully synchronized and active!")
     print("\n" + "=" * 66)
     print(" 🚀 Streaming Live Camera Frames to 5G Edge Server...")
     print("    Open your 5G Dashboard at: " + server_url)
@@ -203,9 +271,9 @@ def main():
     try:
         while True:
             t0 = time.time()
-            ret, frame = cap.read()
+            ret, frame = grabber.read()
             if not ret or frame is None or frame.size == 0:
-                time.sleep(0.02)
+                time.sleep(0.01)
                 continue
 
             frame_count += 1
@@ -275,7 +343,7 @@ def main():
     except KeyboardInterrupt:
         print("\n\n[*] Stream stopped by user.")
     finally:
-        cap.release()
+        grabber.stop()
         print("[✓] Camera closed. Goodbye!")
 
 if __name__ == "__main__":

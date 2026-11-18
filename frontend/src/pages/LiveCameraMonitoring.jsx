@@ -314,7 +314,9 @@ export const LiveCameraMonitoring = () => {
       if (data?.cameraId === 'external_camera' || !data?.cameraId || data?.cameraId?.includes('external')) {
         if (data.frame) {
           setLiveVideoFrame(data.frame);
+          setIsStreaming(true);
           setStreamError('');
+          if (data.fps) setStreamFps(data.fps);
         }
       }
     };
@@ -322,6 +324,7 @@ export const LiveCameraMonitoring = () => {
     const handleDetections = (data) => {
       if (data?.cameraId === 'external_camera' || !data?.cameraId || data?.cameraId?.includes('external')) {
         setExternalDetections(data.detections || []);
+        setIsStreaming(true);
       }
     };
 

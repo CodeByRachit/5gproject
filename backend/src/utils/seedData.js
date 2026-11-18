@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import csvParser from 'csv-parser';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
@@ -9,6 +10,9 @@ import { CameraConfig } from '../models/CameraConfig.js';
 import { SystemSettings } from '../models/SystemSettings.js';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const candidateDirs = [
   process.env.SEED_DATA_DIR,

@@ -60,9 +60,20 @@ if command -v docker >/dev/null 2>&1; then
     # 1. Check if Docker Compose V2 plugin is already working
     if docker compose version >/dev/null 2>&1; then
       COMPOSE_CMD="docker compose"
-    else
-      # 2. If V2 missing or legacy Python v1 has urllib3 collision, auto-install V2 binary (non-sudo)
-      echo -e "${CYAN}[i] Modern Docker Compose v2 not found. Installing standalone v2 plugin into ~/.docker/cli-plugins/...${NC}"
+    elif command -v docker-compose >/dev/null 2>&1; then
+      # 2. Fast-path: Quick-patch urllib3 for the existing docker-compose (takes 1 second, 0MB download)
+      echo -e "${CYAN}[i] Patching urllib3 compatibility for existing docker-compose...${NC}"
+      python3 -m pip install "urllib3<2.0.0" --quiet 2>/dev/null || pip install "urllib3<2.0.0" --quiet 2>/dev/null || true
+
+      if docker-compose version >/dev/null 2>&1; then
+        echo -e "${GREEN}[✓] Existing docker-compose patched and working successfully!${NC}"
+        COMPOSE_CMD="docker-compose"
+      fi
+    fi
+
+    # 3. If neither worked, download Docker Compose v2 with visible progress bar
+    if [ -z "${COMPOSE_CMD}" ]; then
+      echo -e "${CYAN}[i] Downloading standalone Docker Compose v2 plugin into ~/.docker/cli-plugins/...${NC}"
       ARCH=$(uname -m)
       case "${ARCH}" in
         x86_64) BIN_ARCH="x86_64" ;;
@@ -73,17 +84,12 @@ if command -v docker >/dev/null 2>&1; then
       mkdir -p "${HOME}/.docker/cli-plugins" "${HOME}/.local/bin"
       COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${BIN_ARCH}"
 
-      if curl -sSL -f "${COMPOSE_URL}" -o "${HOME}/.docker/cli-plugins/docker-compose"; then
+      if curl -fL --connect-timeout 10 --max-time 90 --progress-bar "${COMPOSE_URL}" -o "${HOME}/.docker/cli-plugins/docker-compose"; then
         chmod +x "${HOME}/.docker/cli-plugins/docker-compose"
         cp "${HOME}/.docker/cli-plugins/docker-compose" "${HOME}/.local/bin/docker-compose"
         chmod +x "${HOME}/.local/bin/docker-compose"
         echo -e "${GREEN}[✓] Docker Compose v2 installed into ~/.docker/cli-plugins/ and ~/.local/bin/${NC}"
         COMPOSE_CMD="docker compose"
-      elif command -v docker-compose >/dev/null 2>&1; then
-        # Fallback: Fix urllib3 2.x breaking change for legacy Python docker-compose
-        echo -e "${YELLOW}[!] Resolving urllib3 compatibility for legacy docker-compose...${NC}"
-        python3 -m pip install "urllib3<2" --quiet 2>/dev/null || true
-        COMPOSE_CMD="docker-compose"
       fi
     fi
   fi

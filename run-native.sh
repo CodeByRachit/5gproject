@@ -105,8 +105,12 @@ npm install --omit=dev --silent
 echo -e "${CYAN}[*] Running initial database seed check...${NC}"
 npm run seed || true
 
-# Kill any existing backend process on port 5000
+# Kill any existing process on port 5000
 fuser -k 5000/tcp 2>/dev/null || true
+PID_5000=$(lsof -t -i:5000 2>/dev/null || ss -lptn 'sport = :5000' 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
+if [ -n "${PID_5000}" ]; then
+  kill -9 ${PID_5000} 2>/dev/null || true
+fi
 
 echo -e "${CYAN}[*] Starting 5G Smart Campus Server (Express + Socket.IO + YOLOv8 + UI)...${NC}"
 export PORT=5000
@@ -116,37 +120,52 @@ export MODEL_PATH="$(pwd)/models/yolov8n.onnx"
 export SEED_DATA_DIR="$(pwd)/data/seed"
 export PYTHON_PATH="$(which python3 2>/dev/null || echo python)"
 
-nohup npm start > ../logs/backend.log 2>&1 &
+# Launch server directly with node detached from terminal
+nohup node src/server.js </dev/null > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
-echo -e "${GREEN}[✓] 5G Traffic System running in background (PID: ${BACKEND_PID})${NC}"
-cd ..
+disown ${BACKEND_PID} 2>/dev/null || true
+echo -e "${GREEN}[✓] Process spawned with PID: ${BACKEND_PID}${NC}"
 
-# ------------------------------------------------------------------------------
-# 6. Enable Process Lingering (Persistent on SSH Logout)
-# ------------------------------------------------------------------------------
+# Enable Process Lingering (Persistent on SSH Logout)
 if command -v loginctl >/dev/null 2>&1; then
   loginctl enable-linger "$(whoami)" 2>/dev/null || true
 fi
 
-# ------------------------------------------------------------------------------
-# 7. Deployment Summary
-# ------------------------------------------------------------------------------
-sleep 3
+# Verify server health before showing success
+echo -e "${CYAN}[*] Verifying server health on port 5000...${NC}"
+SERVER_READY=0
+for i in {1..15}; do
+  if curl -sf http://127.0.0.1:5000/api/health >/dev/null 2>&1; then
+    SERVER_READY=1
+    break
+  fi
+  sleep 1
+done
+
 HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "YOUR_SERVER_IP")
+
+if [ "${SERVER_READY}" -ne 1 ]; then
+  echo -e "${RED}[ERROR] Backend failed to start or crashed. Here is logs/backend.log:${NC}"
+  echo "------------------------------------------------------------------"
+  cat ../logs/backend.log || true
+  echo "------------------------------------------------------------------"
+  exit 1
+fi
 
 echo ""
 echo -e "${BOLD}${GREEN}==================================================================${NC}"
-echo -e "${BOLD}${GREEN} 🎉 5G Smart Campus Traffic Monitoring System Active (Native)!    ${NC}"
+echo -e "${BOLD}${GREEN} 🎉 5G Smart Campus Traffic Monitoring System Active & Verified!  ${NC}"
 echo -e "${BOLD}${GREEN}==================================================================${NC}"
 echo -e " Access your 5G dashboard and endpoints:"
 echo ""
 echo -e "  🌐 ${BOLD}Live Campus Dashboard:${NC}   http://${HOST_IP}:5000"
 echo -e "  📡 ${BOLD}REST API Health:${NC}         http://${HOST_IP}:5000/api/health"
 echo -e "  ⚡ ${BOLD}WebSocket Stream:${NC}        http://${HOST_IP}:5000"
-echo -e "  📄 ${BOLD}Live Backend Logs:${NC}       tail -f logs/backend.log"
 echo ""
-echo -e "${BOLD}Helpful Commands:${NC}"
-echo -e "  • Check status:   curl -s http://localhost:5000/api/health"
-echo -e "  • View logs:      tail -f logs/backend.log"
-echo -e "  • Stop server:    kill ${BACKEND_PID} (or: fuser -k 5000/tcp)"
+echo -e "${CYAN}[*] Streaming live traffic logs below...${NC}"
+echo -e "${YELLOW}(Press Ctrl+C to detach anytime; the server will continue running in background)${NC}"
 echo -e "${BOLD}${GREEN}==================================================================${NC}"
+echo ""
+
+cd ..
+tail -n 25 -f logs/backend.log

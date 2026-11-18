@@ -42,6 +42,7 @@ export APP_GID="${CURRENT_GID}"
 # 2. Rootless Docker Socket & Daemon Detection
 # ------------------------------------------------------------------------------
 COMPOSE_CMD=""
+export PATH="${HOME}/.local/bin:${PATH}"
 
 if command -v docker >/dev/null 2>&1; then
   # Check for Rootless Docker socket
@@ -55,10 +56,35 @@ if command -v docker >/dev/null 2>&1; then
 
   if docker info >/dev/null 2>&1; then
     echo -e "${GREEN}[✓] Docker daemon is running and accessible.${NC}"
+
+    # 1. Check if Docker Compose V2 plugin is already working
     if docker compose version >/dev/null 2>&1; then
       COMPOSE_CMD="docker compose"
-    elif command -v docker-compose >/dev/null 2>&1; then
-      COMPOSE_CMD="docker-compose"
+    else
+      # 2. If V2 missing or legacy Python v1 has urllib3 collision, auto-install V2 binary (non-sudo)
+      echo -e "${CYAN}[i] Modern Docker Compose v2 not found. Installing standalone v2 plugin into ~/.docker/cli-plugins/...${NC}"
+      ARCH=$(uname -m)
+      case "${ARCH}" in
+        x86_64) BIN_ARCH="x86_64" ;;
+        aarch64|arm64) BIN_ARCH="aarch64" ;;
+        *) BIN_ARCH="x86_64" ;;
+      esac
+
+      mkdir -p "${HOME}/.docker/cli-plugins" "${HOME}/.local/bin"
+      COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${BIN_ARCH}"
+
+      if curl -sSL -f "${COMPOSE_URL}" -o "${HOME}/.docker/cli-plugins/docker-compose"; then
+        chmod +x "${HOME}/.docker/cli-plugins/docker-compose"
+        cp "${HOME}/.docker/cli-plugins/docker-compose" "${HOME}/.local/bin/docker-compose"
+        chmod +x "${HOME}/.local/bin/docker-compose"
+        echo -e "${GREEN}[✓] Docker Compose v2 installed into ~/.docker/cli-plugins/ and ~/.local/bin/${NC}"
+        COMPOSE_CMD="docker compose"
+      elif command -v docker-compose >/dev/null 2>&1; then
+        # Fallback: Fix urllib3 2.x breaking change for legacy Python docker-compose
+        echo -e "${YELLOW}[!] Resolving urllib3 compatibility for legacy docker-compose...${NC}"
+        python3 -m pip install "urllib3<2" --quiet 2>/dev/null || true
+        COMPOSE_CMD="docker-compose"
+      fi
     fi
   fi
 fi
@@ -70,6 +96,14 @@ if [ -z "${COMPOSE_CMD}" ] && command -v podman >/dev/null 2>&1; then
     COMPOSE_CMD="podman compose"
   elif command -v podman-compose >/dev/null 2>&1; then
     COMPOSE_CMD="podman-compose"
+  fi
+fi
+
+# Final validation of the selected compose command
+if [ -n "${COMPOSE_CMD}" ]; then
+  if ! ${COMPOSE_CMD} version >/dev/null 2>&1; then
+    echo -e "${YELLOW}[!] Selected ${COMPOSE_CMD} failed version check. Applying urllib3 compatibility fix...${NC}"
+    python3 -m pip install "urllib3<2" --quiet 2>/dev/null || true
   fi
 fi
 

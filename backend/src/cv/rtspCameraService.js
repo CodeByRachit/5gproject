@@ -17,6 +17,7 @@ class RtspCameraService {
     this.fpsCounters = new Map();     // cameraId -> count
     this.lastFpsTimes = new Map();    // cameraId -> timestamp
     this.fpsMap = new Map();          // cameraId -> number
+    this.isSimulated = new Map();     // cameraId -> boolean
     this.workerScript = path.join(__dirname, 'rtsp_worker.py');
     
     // Resolve venv Python or system python
@@ -64,6 +65,7 @@ class RtspCameraService {
 
     if (ip && (ip === '127.0.0.1' || ip.toLowerCase() === 'simulate')) {
       args.push('--simulate');
+      this.isSimulated.set(cameraId, true);
     }
 
     return new Promise((resolve, reject) => {
@@ -84,10 +86,13 @@ class RtspCameraService {
           try {
             const parsed = JSON.parse(line.trim());
             if (parsed.status === 'connected') {
-              console.log(`[CameraService] ${cameraId} connected successfully. Dimensions: ${parsed.width}x${parsed.height}`);
+              console.log(`[CameraService] ${cameraId} connected successfully. Dimensions: ${parsed.width}x${parsed.height}${parsed.simulated ? ' [Simulated 5G CCTV]' : ''}`);
+              if (parsed.simulated) {
+                this.isSimulated.set(cameraId, true);
+              }
               if (!resolved) {
                 resolved = true;
-                resolve({ success: true, message: parsed.message });
+                resolve({ success: true, message: parsed.message, simulated: parsed.simulated });
               }
             } else if (parsed.status === 'error') {
               console.error(`[CameraService Error] ${parsed.message}`);
@@ -172,7 +177,8 @@ class RtspCameraService {
           if (!this.isProcessingInference.get(cameraId)) {
             this.isProcessingInference.set(cameraId, true);
             const pipeline = getCameraPipeline(cameraId);
-            pipeline.processFrame(frameBuffer, currentFps, captureLatency)
+            const isSim = this.isSimulated.get(cameraId) || false;
+            pipeline.processFrame(frameBuffer, currentFps, captureLatency, isSim)
               .catch((inferErr) => {
                 // Ignore minor inference frame skips
               })
@@ -216,6 +222,7 @@ class RtspCameraService {
    * Stop active camera stream
    */
   stopCamera(cameraId) {
+    this.isSimulated.delete(cameraId);
     if (this.activeProcesses.has(cameraId)) {
       const proc = this.activeProcesses.get(cameraId);
       try {

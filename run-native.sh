@@ -119,6 +119,7 @@ export MONGODB_URI="mongodb://127.0.0.1:27017/smart_campus_traffic"
 export MODEL_PATH="$(pwd)/models/yolov8n.onnx"
 export SEED_DATA_DIR="$(pwd)/data/seed"
 export PYTHON_PATH="$(which python3 2>/dev/null || echo python)"
+export AUTO_FALLBACK_SIMULATION=1
 
 # Launch server directly with node detached from terminal
 nohup node src/server.js </dev/null > ../logs/backend.log 2>&1 &
@@ -156,12 +157,24 @@ echo ""
 echo -e "${BOLD}${GREEN}==================================================================${NC}"
 echo -e "${BOLD}${GREEN} 🎉 5G Smart Campus Traffic Monitoring System Active & Verified!  ${NC}"
 echo -e "${BOLD}${GREEN}==================================================================${NC}"
-echo -e " Access your 5G dashboard and endpoints:"
+echo -e " Open in your browser from any device on your 5G/Wi-Fi network:"
 echo ""
-echo -e "  🌐 ${BOLD}Live Campus Dashboard:${NC}   http://${HOST_IP}:5000"
-echo -e "  📡 ${BOLD}REST API Health:${NC}         http://${HOST_IP}:5000/api/health"
-echo -e "  ⚡ ${BOLD}WebSocket Stream:${NC}        http://${HOST_IP}:5000"
+PRIMARY_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "YOUR_SERVER_IP")
+for ip_addr in $(hostname -I 2>/dev/null || echo "localhost"); do
+  if [[ ! "$ip_addr" =~ ^172\. && ! "$ip_addr" =~ ^127\. ]]; then
+    echo -e "  🌐 ${BOLD}http://${ip_addr}:5000${NC}"
+  fi
+done
 echo ""
+echo -e "  📡 ${BOLD}REST API Health:${NC}  http://${PRIMARY_IP}:5000/api/health"
+echo -e "  ⚡ ${BOLD}WebSocket Stream:${NC} http://${PRIMARY_IP}:5000"
+echo ""
+if ! ip route 2>/dev/null | grep -q "192.168.128"; then
+  echo -e "  💡 ${YELLOW}Physical Sparsh CCTV Tip:${NC} Server has no route to 192.168.128.x subnet yet."
+  echo -e "     • If camera is direct Ethernet connected: sudo ip addr add 192.168.128.99/24 dev <eth-interface>"
+  echo -e "     • Or click ${GREEN}'5G Simulated CCTV (Demo)'${NC} on dashboard for instant full-featured live demo!"
+  echo ""
+fi
 echo -e "${CYAN}[*] Streaming live traffic logs below...${NC}"
 echo -e "${YELLOW}(Press Ctrl+C to detach anytime; the server will continue running in background)${NC}"
 echo -e "${BOLD}${GREEN}==================================================================${NC}"

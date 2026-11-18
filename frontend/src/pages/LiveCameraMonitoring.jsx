@@ -293,6 +293,29 @@ export const LiveCameraMonitoring = () => {
     }
   };
 
+  const startSimulatedFeed = async () => {
+    setCctvError('');
+    setStreamError('');
+    try {
+      const config = {
+        type: 'rtsp',
+        ip: 'simulate',
+        port: '554',
+        username: 'admin',
+        password: '',
+        streamPath: '/avstream/channel=1/stream=0.sdp',
+        name: 'Sparsh IP CCTV (5G Simulated Feed)',
+      };
+      await apiService.startCamera('external_camera', config);
+      setIsStreaming(true);
+      const apiEndpoint = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:5000/api');
+      setStreamFrameUrl(`${apiEndpoint}/cameras/external_camera/stream?t=${Date.now()}`);
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to start simulated feed';
+      setCctvError(errMsg);
+    }
+  };
+
   const stopExternalCamera = async () => {
     try {
       await apiService.stopCamera('external_camera');
@@ -805,11 +828,28 @@ export const LiveCameraMonitoring = () => {
                     </span>
                   </div>
 
-                  {/* Inline Error Message */}
+                  {/* Inline Error & Fallback Action */}
                   {cctvError && (
-                    <div className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-lg flex items-center gap-2">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{cctvError}</span>
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                          <span>{cctvError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={startSimulatedFeed}
+                          className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Radio className="w-3 h-3" />
+                          Launch 5G Demo Stream
+                        </button>
+                      </div>
+                      <div className="text-[10px] text-slate-400 bg-slate-900/60 border border-slate-800 p-2.5 rounded-lg space-y-1">
+                        <p className="font-semibold text-slate-300">💡 5G CCTV Network Routing Tip:</p>
+                        <p>If the Sparsh CCTV is connected via direct Ethernet cable to the 5G edge server, configure the server Ethernet interface on the camera subnet:</p>
+                        <code className="text-emerald-400 font-mono block bg-slate-950 px-2 py-1 rounded">sudo ip addr add 192.168.128.99/24 dev eth0</code>
+                      </div>
                     </div>
                   )}
 
@@ -854,6 +894,16 @@ export const LiveCameraMonitoring = () => {
                       >
                         Continue
                         <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={startSimulatedFeed}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer"
+                        title="Simulate 5G CCTV stream with YOLOv8 inference without physical camera"
+                      >
+                        <Radio className="w-3.5 h-3.5" />
+                        5G Simulated CCTV (Demo)
                       </button>
                     </form>
                   )}

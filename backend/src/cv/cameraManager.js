@@ -80,72 +80,15 @@ class ActiveCameraPipeline {
   /**
    * Process a single video frame (JPEG buffer or base64)
    */
-  async processFrame(frameInput, fps = 15, captureLatency = 0, isSimulated = false) {
+  async processFrame(frameInput, fps = 15, captureLatency = 0) {
     const startTime = Date.now();
     try {
       this.status = 'Running';
       // 1. YOLOv8 Detection with Letterboxing, Class-Specific Sensitivity & NMS 0.58
-      let { detections, candidates, imageWidth, imageHeight } = await detectObjects(
+      const { detections, candidates, imageWidth, imageHeight } = await detectObjects(
         frameInput,
         this.detectionOptions
       );
-
-      // In simulated 5G mode, synthesize vehicle detections if neural net confidence on cartoon shapes is low
-      if (isSimulated && (!detections || detections.length === 0)) {
-        const now = Date.now();
-        const frameIdx = Math.floor(now / 40); // ~25 FPS
-        const w = imageWidth || 1280;
-        const h = imageHeight || 720;
-
-        const carProgress = ((frameIdx * 7) % (w + 240)) / (w + 240);
-        const carX = Math.floor(carProgress * (w + 240) - 120);
-        const carY = Math.floor(340 + carProgress * 130);
-
-        const busProgress = ((frameIdx * 5) % (w + 300)) / (w + 300);
-        const busX = Math.floor(w - busProgress * (w + 300) + 100);
-        const busY = Math.floor(450 - busProgress * 120);
-
-        const bikeProgress = ((frameIdx * 10) % (w + 160)) / (w + 160);
-        const bikeX = Math.floor(bikeProgress * (w + 160) - 80);
-        const bikeY = 540;
-
-        const simBoxes = [];
-        if (carX > -50 && carX < w - 40) {
-          simBoxes.push({
-            bbox: [Math.max(0, carX), carY, Math.min(w, carX + 130), carY + 65],
-            confidence: 0.94,
-            classId: 2,
-            classKey: 'car',
-            label: 'Car',
-            isPrimary: true,
-          });
-        }
-        if (busX > -100 && busX < w - 40) {
-          simBoxes.push({
-            bbox: [Math.max(0, busX), busY, Math.min(w, busX + 200), busY + 80],
-            confidence: 0.91,
-            classId: 5,
-            classKey: 'bus',
-            label: 'Bus',
-            isPrimary: true,
-          });
-        }
-        if (bikeX > -20 && bikeX < w - 20) {
-          simBoxes.push({
-            bbox: [Math.max(0, bikeX), bikeY, Math.min(w, bikeX + 60), bikeY + 35],
-            confidence: 0.88,
-            classId: 3,
-            classKey: 'motorcycle',
-            label: 'Motorcycle',
-            isPrimary: true,
-          });
-        }
-
-        if (simBoxes.length > 0) {
-          detections = simBoxes;
-          candidates = simBoxes;
-        }
-      }
 
       // 2. ByteTrack Tracking ID Association with 2-stage association and strict class consistency
       const trackedDetections = this.tracker.update(candidates || detections);

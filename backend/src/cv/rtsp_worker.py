@@ -60,7 +60,7 @@ class FreshFrameReader:
         else:
             # Low latency and no-buffer capture options for RTSP over TCP
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;8000000"
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;4000000"
             )
             self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
             if not self.cap or not self.cap.isOpened():
@@ -68,7 +68,7 @@ class FreshFrameReader:
                     self.cap.release()
                 # Try UDP transport fallback for Sparsh RTSP cameras
                 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                    "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;8000000"
+                    "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;500000|probesize;32768|analyzeduration;500000|stimeout;4000000"
                 )
                 self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
             if not self.cap or not self.cap.isOpened():
@@ -128,96 +128,12 @@ def generate_simulated_frame(frame_count):
     import cv2
     w, h = 1280, 720
     img = np.zeros((h, w, 3), dtype=np.uint8)
-    
-    # Asphalt road
-    img[:, :] = (38, 42, 48)
-    
-    # Sidewalks / grass curbs
-    img[0:90, :] = (28, 46, 28)
-    img[630:720, :] = (28, 46, 28)
-    img[86:92, :] = (190, 190, 190)
-    img[628:634, :] = (190, 190, 190)
-
-    # Road dashed lane dividing markings
-    dash_length = 50
-    gap = 30
-    cycle = dash_length + gap
-    for x in range(0, w, cycle):
-        img[358:362, x:min(x + dash_length, w)] = (240, 240, 240)
-
-    # Crosswalk (Zebra stripes) at x: 980 to 1080
-    for y_stripe in range(110, 610, 50):
-        cv2.rectangle(img, (980, y_stripe), (1070, y_stripe + 30), (220, 220, 220), -1)
-
-    # Virtual Line-Crossing guide line (y = 0.55 * 720 = 396)
-    for lx in range(0, w, 24):
-        cv2.line(img, (lx, 396), (min(w, lx + 14), 396), (0, 230, 255), 2)
-
-    # Moving vehicles for simulated 5G demo
-    # 1. Car: moving left to right, transitioning from y=340 to y=470 (crosses line 396 incoming)
-    car_progress = ((frame_count * 7) % (w + 240)) / float(w + 240)
-    car_x = int(car_progress * (w + 240) - 120)
-    car_y = int(340 + car_progress * 130)
-    if -120 < car_x < w + 60:
-        # Shadow
-        cv2.rectangle(img, (car_x - 4, car_y + 40), (car_x + 134, car_y + 68), (15, 18, 20), -1)
-        # Car body
-        cv2.rectangle(img, (car_x, car_y + 15), (car_x + 130, car_y + 60), (195, 120, 30), -1)
-        # Car cabin / roof
-        cv2.rectangle(img, (car_x + 25, car_y), (car_x + 95, car_y + 30), (225, 140, 45), -1)
-        # Windshield & windows
-        cv2.rectangle(img, (car_x + 30, car_y + 4), (car_x + 52, car_y + 20), (50, 75, 95), -1)
-        cv2.rectangle(img, (car_x + 60, car_y + 4), (car_x + 88, car_y + 20), (50, 75, 95), -1)
-        # Headlights / Taillights
-        cv2.rectangle(img, (car_x + 125, car_y + 42), (car_x + 130, car_y + 54), (100, 255, 255), -1)
-        cv2.rectangle(img, (car_x, car_y + 42), (car_x + 4, car_y + 54), (40, 40, 240), -1)
-        # Wheels
-        cv2.circle(img, (car_x + 28, car_y + 60), 12, (20, 20, 20), -1)
-        cv2.circle(img, (car_x + 102, car_y + 60), 12, (20, 20, 20), -1)
-        cv2.putText(img, "CAR", (car_x + 44, car_y + 44), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-    # 2. Bus: moving right to left, transitioning from y=450 to y=330 (crosses line 396 outgoing)
-    bus_progress = ((frame_count * 5) % (w + 300)) / float(w + 300)
-    bus_x = int(w - bus_progress * (w + 300) + 100)
-    bus_y = int(450 - bus_progress * 120)
-    if -220 < bus_x < w + 80:
-        # Shadow
-        cv2.rectangle(img, (bus_x - 6, bus_y + 60), (bus_x + 206, bus_y + 88), (15, 18, 20), -1)
-        # Bus body
-        cv2.rectangle(img, (bus_x, bus_y), (bus_x + 200, bus_y + 75), (45, 125, 225), -1)
-        # Bus windows
-        for wx in range(bus_x + 15, bus_x + 175, 32):
-            cv2.rectangle(img, (wx, bus_y + 12), (wx + 22, bus_y + 36), (60, 85, 110), -1)
-        # Bus headlights
-        cv2.rectangle(img, (bus_x, bus_y + 52), (bus_x + 5, bus_y + 66), (100, 255, 255), -1)
-        # Bus wheels
-        cv2.circle(img, (bus_x + 40, bus_y + 76), 15, (20, 20, 20), -1)
-        cv2.circle(img, (bus_x + 160, bus_y + 76), 15, (20, 20, 20), -1)
-        cv2.putText(img, "CAMPUS SHUTTLE", (bus_x + 28, bus_y + 56), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-    # 3. Motorcycle: fast moving left to right along lower lane
-    bike_progress = ((frame_count * 10) % (w + 160)) / float(w + 160)
-    bike_x = int(bike_progress * (w + 160) - 80)
-    bike_y = 540
-    if -60 < bike_x < w + 40:
-        # Wheels
-        cv2.circle(img, (bike_x + 10, bike_y + 25), 8, (20, 20, 20), -1)
-        cv2.circle(img, (bike_x + 48, bike_y + 25), 8, (20, 20, 20), -1)
-        # Body & Rider
-        cv2.line(img, (bike_x + 10, bike_y + 25), (bike_x + 30, bike_y + 12), (50, 180, 70), 3)
-        cv2.line(img, (bike_x + 30, bike_y + 12), (bike_x + 48, bike_y + 25), (50, 180, 70), 3)
-        # Rider helmet
-        cv2.circle(img, (bike_x + 28, bike_y), 6, (240, 200, 40), -1)
-
-    # OSD Header & 5G Telemetry Overlay
+    img[:, :] = (30, 30, 35)
     timestamp_str = time.strftime("%Y-%m-%d  %H:%M:%S", time.localtime())
-    cv2.putText(img, f"SPARSH CCTV [CHECKPOINT-01]  {timestamp_str}", (20, 36),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2, cv2.LINE_AA)
-    cv2.putText(img, "5G STANDALONE (NR-SA) | LOW LATENCY EDGE STREAM", (20, 68),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (80, 220, 120), 1, cv2.LINE_AA)
-    cv2.putText(img, "VIRTUAL COUNTING LINE (0.55)", (w - 360, 388),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 230, 255), 1, cv2.LINE_AA)
-
+    cv2.putText(img, f"SPARSH CCTV STANDBY  {timestamp_str}", (40, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(img, "Awaiting RTSP Camera Stream...", (40, 110),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 1, cv2.LINE_AA)
     return img
 
 def main():
@@ -226,7 +142,7 @@ def main():
 
     import cv2
 
-    use_simulation = args.simulate or args.ip.lower() in ["simulate", "demo"]
+    use_simulation = bool(args.simulate)
     reader = None
 
     if not use_simulation:
@@ -234,51 +150,36 @@ def main():
 
         # Non-blocking IP reachability check
         if not is_usb and args.ip and args.port:
-            port_reachable = is_port_reachable(args.ip, args.port, timeout=4.0)
+            port_reachable = is_port_reachable(args.ip, args.port, timeout=3.0)
             if not port_reachable:
-                if args.ip in ["127.0.0.1", "localhost", "simulate", "demo"]:
-                    use_simulation = True
-                else:
-                    sys.stderr.write(json.dumps({
-                        "status": "warning",
-                        "message": f"TCP port probe to {args.ip}:{args.port} timed out. Attempting RTSP direct connection via FFmpeg..."
-                    }) + "\n")
-                    sys.stderr.flush()
+                sys.stderr.write(json.dumps({
+                    "status": "warning",
+                    "message": f"TCP port probe to {args.ip}:{args.port} timed out. Attempting RTSP direct connection via FFmpeg..."
+                }) + "\n")
+                sys.stderr.flush()
 
-        if not use_simulation:
-            reader = FreshFrameReader(source, is_usb=is_usb)
-            started = reader.start()
+        reader = FreshFrameReader(source, is_usb=is_usb)
+        started = reader.start()
 
-            # Verify actual video frames arrive within ~5 seconds
-            verified_frame = None
-            if started:
-                for _ in range(40):
-                    frame, _, _, _ = reader.get_latest_frame()
-                    if frame is not None and frame.size > 0:
-                        verified_frame = frame
-                        break
-                    time.sleep(0.12)
+        # Verify actual video frames arrive within ~5 seconds
+        verified_frame = None
+        if started:
+            for _ in range(40):
+                frame, _, _, _ = reader.get_latest_frame()
+                if frame is not None and frame.size > 0:
+                    verified_frame = frame
+                    break
+                time.sleep(0.12)
 
-            if not started or verified_frame is None:
-                if reader:
-                    reader.stop()
-
-                # Seamless auto-fallback to simulated 5G CCTV stream if physical camera unreachable
-                auto_fallback = os.environ.get("AUTO_FALLBACK_SIMULATION", "1") == "1"
-                if auto_fallback:
-                    sys.stderr.write(json.dumps({
-                        "status": "warning",
-                        "message": f"Camera at {args.ip}:{args.port} unreachable. Switched to 5G Simulated CCTV feed for uninterrupted live demo."
-                    }) + "\n")
-                    sys.stderr.flush()
-                    use_simulation = True
-                else:
-                    sys.stderr.write(json.dumps({
-                        "status": "error",
-                        "message": f"Could not reach camera at {args.ip}:{args.port}. Check camera network cable, power, and IP routing."
-                    }) + "\n")
-                    sys.stderr.flush()
-                    sys.exit(1)
+        if not started or verified_frame is None:
+            if reader:
+                reader.stop()
+            sys.stderr.write(json.dumps({
+                "status": "error",
+                "message": f"Could not reach camera at {args.ip or source}. Check camera IP, network cable, and power."
+            }) + "\n")
+            sys.stderr.flush()
+            sys.exit(1)
 
     # Frame dimensions
     if not use_simulation and verified_frame is not None:

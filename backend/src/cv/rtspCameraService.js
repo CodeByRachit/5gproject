@@ -17,7 +17,6 @@ class RtspCameraService {
     this.fpsCounters = new Map();     // cameraId -> count
     this.lastFpsTimes = new Map();    // cameraId -> timestamp
     this.fpsMap = new Map();          // cameraId -> number
-    this.isSimulated = new Map();     // cameraId -> boolean
     this.workerScript = path.join(__dirname, 'rtsp_worker.py');
     
     // Resolve venv Python or system python
@@ -65,11 +64,23 @@ class RtspCameraService {
 
     if (ip && (ip === '127.0.0.1' || ip.toLowerCase() === 'simulate')) {
       args.push('--simulate');
-      this.isSimulated.set(cameraId, true);
     }
 
     return new Promise((resolve, reject) => {
       let resolved = false;
+
+      let connectTimeout = null;
+      const finish = (err, result) => {
+        if (resolved) return;
+        resolved = true;
+        if (connectTimeout) clearTimeout(connectTimeout);
+        if (err) {
+          this.stopCamera(cameraId);
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      };
 
       const worker = spawn(this.pythonExecutable, args, {
         windowsHide: true,
@@ -86,21 +97,11 @@ class RtspCameraService {
           try {
             const parsed = JSON.parse(line.trim());
             if (parsed.status === 'connected') {
-              console.log(`[CameraService] ${cameraId} connected successfully. Dimensions: ${parsed.width}x${parsed.height}${parsed.simulated ? ' [Simulated 5G CCTV]' : ''}`);
-              if (parsed.simulated) {
-                this.isSimulated.set(cameraId, true);
-              }
-              if (!resolved) {
-                resolved = true;
-                resolve({ success: true, message: parsed.message, simulated: parsed.simulated });
-              }
+              console.log(`[CameraService] ${cameraId} connected successfully. Dimensions: ${parsed.width}x${parsed.height}`);
+              finish(null, { success: true, message: parsed.message });
             } else if (parsed.status === 'error') {
               console.error(`[CameraService Error] ${parsed.message}`);
-              if (!resolved) {
-                resolved = true;
-                this.stopCamera(cameraId);
-                reject(new Error(parsed.message));
-              }
+              finish(new Error(parsed.message));
             } else if (parsed.status === 'warning') {
               console.warn(`[CameraService Warning] ${parsed.message}`);
             }
@@ -177,8 +178,7 @@ class RtspCameraService {
           if (!this.isProcessingInference.get(cameraId)) {
             this.isProcessingInference.set(cameraId, true);
             const pipeline = getCameraPipeline(cameraId);
-            const isSim = this.isSimulated.get(cameraId) || false;
-            pipeline.processFrame(frameBuffer, currentFps, captureLatency, isSim)
+            pipeline.processFrame(frameBuffer, currentFps, captureLatency)
               .catch((inferErr) => {
                 // Ignore minor inference frame skips
               })
@@ -191,30 +191,19 @@ class RtspCameraService {
 
       worker.on('error', (err) => {
         console.error(`[Camera Worker Process Error]`, err);
-        if (!resolved) {
-          resolved = true;
-          this.stopCamera(cameraId);
-          reject(new Error(`Failed to spawn camera process: ${err.message}`));
-        }
+        finish(new Error(`Failed to spawn camera process: ${err.message}`));
       });
 
       worker.on('close', (code, signal) => {
         console.log(`[CameraService] Camera process for ${cameraId} exited: code=${code}, signal=${signal}`);
         this.activeProcesses.delete(cameraId);
-        if (!resolved) {
-          resolved = true;
-          reject(new Error(`Camera process exited with code ${code} (${signal})`));
-        }
+        finish(new Error(`Camera process exited with code ${code} (${signal})`));
       });
 
-      // Connection timeout fallback (15 seconds for 4K handshake)
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          this.stopCamera(cameraId);
-          reject(new Error(`Connection to camera timed out after 15 seconds.`));
-        }
-      }, 15000);
+      // Connection timeout fallback (20 seconds for high-resolution RTSP handshake)
+      connectTimeout = setTimeout(() => {
+        finish(new Error(`Connection to camera timed out after 20 seconds. Check camera IP, network cable, and power.`));
+      }, 20000);
     });
   }
 
@@ -222,7 +211,6 @@ class RtspCameraService {
    * Stop active camera stream
    */
   stopCamera(cameraId) {
-    this.isSimulated.delete(cameraId);
     if (this.activeProcesses.has(cameraId)) {
       const proc = this.activeProcesses.get(cameraId);
       try {

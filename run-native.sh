@@ -119,7 +119,6 @@ export MONGODB_URI="mongodb://127.0.0.1:27017/smart_campus_traffic"
 export MODEL_PATH="$(pwd)/models/yolov8n.onnx"
 export SEED_DATA_DIR="$(pwd)/data/seed"
 export PYTHON_PATH="$(which python3 2>/dev/null || echo python)"
-export AUTO_FALLBACK_SIMULATION=1
 
 # Launch server directly with node detached from terminal
 nohup node src/server.js </dev/null > ../logs/backend.log 2>&1 &
@@ -170,9 +169,13 @@ echo -e "  📡 ${BOLD}REST API Health:${NC}  http://${PRIMARY_IP}:5000/api/heal
 echo -e "  ⚡ ${BOLD}WebSocket Stream:${NC} http://${PRIMARY_IP}:5000"
 echo ""
 if ! ip route 2>/dev/null | grep -q "192.168.128"; then
-  echo -e "  💡 ${YELLOW}Physical Sparsh CCTV Tip:${NC} Server has no route to 192.168.128.x subnet yet."
-  echo -e "     • If camera is direct Ethernet connected: sudo ip addr add 192.168.128.99/24 dev <eth-interface>"
-  echo -e "     • Or click ${GREEN}'5G Simulated CCTV (Demo)'${NC} on dashboard for instant full-featured live demo!"
+  echo -e "  💡 ${YELLOW}Sparsh IP CCTV Network Connection Options:${NC}"
+  echo -e "     1. ${BOLD}If Camera is connected to 5G Server Ethernet:${NC}"
+  echo -e "        Assign IP to server Ethernet interface: sudo ip addr add 192.168.128.99/24 dev <eth-interface>"
+  echo -e "     2. ${BOLD}If Camera is connected to your Laptop:${NC}"
+  echo -e "        Forward camera to server via SSH reverse tunnel from laptop:"
+  echo -e "        ssh -R 5554:192.168.128.10:554 ${USER}@${PRIMARY_IP}"
+  echo -e "        (Then on dashboard, connect to IP: 127.0.0.1, Port: 5554)"
   echo ""
 fi
 echo -e "${CYAN}[*] Streaming live traffic logs below...${NC}"

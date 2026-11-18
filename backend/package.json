@@ -1,0 +1,24 @@
+{
+  "name": "smart-campus-traffic-backend",
+  "version": "1.0.0",
+  "description": "5G Smart Campus Traffic Monitoring & Mobility Analytics Backend",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node src/utils/seedData.js",
+    "wait-for-mongo": "node src/utils/waitForMongo.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jpeg-js": "^0.4.4",
+    "mongoose": "^8.9.5",
+    "multer": "^1.4.5-lts.1",
+    "onnxruntime-node": "^1.20.1",
+    "socket.io": "^4.8.1"
+  }
+}

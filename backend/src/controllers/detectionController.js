@@ -1,4 +1,5 @@
 import { getCameraPipeline } from '../cv/cameraManager.js';
+import { getIO } from '../sockets/socketManager.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -10,7 +11,21 @@ export const detectFrame = async (req, res) => {
     }
 
     const pipeline = getCameraPipeline(cameraId);
+    pipeline.status = 'Running';
     const result = await pipeline.processFrame(image);
+
+    // Broadcast frame to all connected WebSocket clients so UI displays the live stream
+    const io = getIO();
+    if (io) {
+      const frameData = typeof image === 'string' && image.startsWith('data:')
+        ? image
+        : `data:image/jpeg;base64,${image}`;
+      io.emit('camera_frame', {
+        cameraId,
+        frame: frameData,
+        timestamp: Date.now(),
+      });
+    }
 
     return res.json({
       success: true,
